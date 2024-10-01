@@ -3,6 +3,8 @@
 import { useState, useCallback, useEffect } from "react";
 import { GroupSelector } from "@/components/group-selector";
 import { DarkThemeScheduleTableComponent } from "@/components/dark-theme-schedule-table";
+import { DatePicker } from "@/components/date-picker";
+import { format, addDays, subDays } from "date-fns";
 
 type ScheduleEntry = {
     date: string;
@@ -19,21 +21,14 @@ export default function Home() {
     const [isLoading, setIsLoading] = useState(false);
     const [scheduleData, setScheduleData] = useState<ScheduleEntry[]>([]);
     const [error, setError] = useState<string | null>(null);
-    const [lastFetchedDate, setLastFetchedDate] = useState<Date | null>(null);
     const [isCheckingLocalStorage, setIsCheckingLocalStorage] = useState(true);
-    const [currentDate, setCurrentDate] = useState<Date>(new Date());
-    const [dateRange, setDateRange] = useState<{ from: Date | null; to: Date | null }>({
-        from: null,
-        to: null,
-    });
+    const [selectedDate, setSelectedDate] = useState<Date>(new Date());
 
     useEffect(() => {
         const savedGroup = localStorage.getItem("selectedGroup");
         if (savedGroup) {
             setGroupName(savedGroup);
-            const today = new Date();
-            const oneWeekLater = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
-            fetchSchedule(savedGroup, today, oneWeekLater, true).finally(() => {
+            fetchSchedule(savedGroup, selectedDate).finally(() => {
                 setIsCheckingLocalStorage(false);
             });
         } else {
@@ -42,25 +37,17 @@ export default function Home() {
     }, []);
 
     const fetchSchedule = useCallback(
-        async (selectedGroup: string, startDate: Date, endDate: Date, isInitialLoad = false) => {
+        async (selectedGroup: string, date: Date) => {
             if (isLoading) return;
 
             setIsLoading(true);
             setError(null);
 
-            const formatDate = (date: Date) => {
-                const day = String(date.getDate()).padStart(2, "0");
-                const month = String(date.getMonth() + 1).padStart(2, "0");
-                const year = date.getFullYear();
-                return `${day}.${month}.${year}`;
-            };
-
-            // Ensure startDate is not later than endDate
-            const actualStartDate = startDate < endDate ? startDate : endDate;
-            const actualEndDate = startDate < endDate ? endDate : startDate;
-
-            const formattedStartDate = formatDate(actualStartDate);
-            const formattedEndDate = formatDate(actualEndDate);
+            const formatDate = (date: Date) => format(date, "dd.MM.yyyy");
+            const startDate = subDays(date, 3);
+            const endDate = addDays(date, 3);
+            const formattedStartDate = formatDate(startDate);
+            const formattedEndDate = formatDate(endDate);
 
             try {
                 const response = await fetch(
@@ -70,32 +57,21 @@ export default function Home() {
                 );
 
                 if (!response.ok) {
-                    if (response.status === 500) {
-                        setLastFetchedDate(actualEndDate);
-                        return;
-                    }
                     throw new Error(`Error: ${response.status} ${response.statusText}`);
                 }
 
                 const data = await response.json();
 
                 if (data.schedule && Array.isArray(data.schedule)) {
-                    setScheduleData((prevData) => {
+                    setScheduleData(prevData => {
                         const newData = [...prevData, ...data.schedule];
-                        const uniqueData = newData.filter(
-                            (entry, index, self) =>
-                                index ===
-                                self.findIndex(
-                                    (t) => t.date === entry.date && t.timestart === entry.timestart
-                                )
-                        );
-                        uniqueData.sort(
-                            (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+                        const uniqueData = newData.filter((item, index, self) =>
+                                index === self.findIndex((t) => (
+                                    t.date === item.date && t.timestart === item.timestart
+                                ))
                         );
                         return uniqueData;
                     });
-                    setLastFetchedDate(actualEndDate);
-                    setGroupName(selectedGroup);
                 } else {
                     throw new Error("Invalid data format received from server.");
                 }
@@ -114,20 +90,21 @@ export default function Home() {
 
     const handleGroupSubmit = (selectedGroup: string) => {
         setScheduleData([]);
-        setLastFetchedDate(null);
         setGroupName(selectedGroup);
-
         localStorage.setItem("selectedGroup", selectedGroup);
-
-        const today = new Date();
-        const oneWeekLater = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
-        fetchSchedule(selectedGroup, today, oneWeekLater, true);
+        fetchSchedule(selectedGroup, selectedDate);
     };
 
-    const handleDateRangeSelect = (range: { from: Date; to: Date }) => {
-        setDateRange(range);
-        if (groupName && range.from && range.to) {
-            fetchSchedule(groupName, range.from, range.to);
+    const handleDateSelect = (date: Date | undefined) => {
+        if (date && groupName) {
+            setSelectedDate(date);
+            fetchSchedule(groupName, date);
+        }
+    };
+
+    const handleLoadMore = (date: Date) => {
+        if (groupName) {
+            fetchSchedule(groupName, date);
         }
     };
 
@@ -165,14 +142,17 @@ export default function Home() {
         <div className="flex flex-col items-center min-h-screen bg-[#09090B] text-gray-300 p-4">
             {groupName ? (
                 <>
+                    <div className="mb-4">
+                        <DatePicker onSelect={handleDateSelect} />
+                    </div>
                     <DarkThemeScheduleTableComponent
                         scheduleData={scheduleData}
-                        onLoadMore={(date) => fetchSchedule(groupName, date, new Date())}
+                        onLoadMore={handleLoadMore}
                         isLoading={isLoading}
                         groupName={groupName}
                         onChangeGroup={() => setGroupName(null)}
-                        currentDate={currentDate}
-                        setCurrentDate={setCurrentDate}
+                        currentDate={selectedDate}
+                        setCurrentDate={setSelectedDate}
                     />
                 </>
             ) : (
@@ -180,5 +160,4 @@ export default function Home() {
             )}
         </div>
     );
-
 }
