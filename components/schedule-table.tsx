@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -35,7 +35,6 @@ export function DarkThemeScheduleTableComponent({
                                                   currentDate,
                                                   setCurrentDate,
                                                 }: DarkThemeScheduleTableProps) {
-  // Определение доступных дат
   const availableDates = useMemo(() => {
     const dates = scheduleData.map(entry => new Date(entry.date));
     dates.sort((a, b) => a.getTime() - b.getTime());
@@ -43,13 +42,43 @@ export function DarkThemeScheduleTableComponent({
     return uniqueDateStrings.map(dateStr => new Date(dateStr));
   }, [scheduleData]);
 
-  // Отфильтровка расписания для текущей даты
+  // Функция для определения номера пары по времени начала
+  const getPairIndex = (startTime: string): number => {
+    // Убираем секунды из времени, если они есть
+    const timeWithoutSeconds = startTime.slice(0, 5);
+
+    // Все возможные времена начала пар и их соответствующие индексы
+    const pairTimes: { [key: string]: number } = {
+      "08:00": 0, // Первая пара
+      "09:40": 1, // Вторая пара
+      "11:20": 2, // Третья пара
+      "13:20": 3, // Четвертая пара
+      "15:00": 4, // Пятая пара
+      "12:50": 3, // Четвертая пара (альтернативное время)
+      "14:50": 4, // Пятая пара (альтернативное время)
+    };
+
+    return pairTimes[timeWithoutSeconds] ?? 0; // Если время не найдено, возвращаем 0 (первая пара)
+  };
+
   const filteredSchedule = useMemo(() => {
     const dateStr = currentDate.toISOString().split('T')[0];
-    return scheduleData.filter(entry => entry.date === dateStr);
+    const dailySchedule = scheduleData.filter(entry => entry.date === dateStr);
+
+    // Создаем массив из 5 пустых мест для пар
+    const schedule: (ScheduleEntry | null)[] = Array(5).fill(null);
+
+    dailySchedule.forEach(entry => {
+      const pairIndex = getPairIndex(entry.timestart);
+      schedule[pairIndex] = entry;
+    });
+
+    return schedule;
   }, [currentDate, scheduleData]);
 
-  // Функция для перехода к следующему дню
+
+
+
   const handleNextDay = () => {
     const nextDate = new Date(currentDate);
     nextDate.setDate(currentDate.getDate() + 1);
@@ -59,23 +88,20 @@ export function DarkThemeScheduleTableComponent({
     }
   };
 
-  // Функция для перехода к предыдущему дню
   const handlePrevDay = () => {
     const prevDate = new Date(currentDate);
     prevDate.setDate(currentDate.getDate() - 1);
     setCurrentDate(prevDate);
     if (!availableDates.some(date => date.toISOString().split('T')[0] === prevDate.toISOString().split('T')[0])) {
-      onLoadMore(prevDate); // Запрашиваем данные, если их нет
+      onLoadMore(prevDate);
     }
   };
 
-  // Проверка доступности предыдущего дня
   const isPrevDayAvailable = useMemo(() => {
     const earliestDate = availableDates.length > 0 ? availableDates[0] : null;
-    return earliestDate ? currentDate > earliestDate : true; // Разрешаем переход на предыдущие дни
+    return earliestDate ? currentDate > earliestDate : true;
   }, [currentDate, availableDates]);
 
-  // Проверка доступности следующего дня
   const isNextDayAvailable = !isLoading;
 
   return (
@@ -94,7 +120,7 @@ export function DarkThemeScheduleTableComponent({
             <Table>
               <TableHeader>
                 <TableRow className="border-b border-gray-800 hover:bg-[#17181A]">
-                  <TableHead className="w-[50px] text-gray-400">No.</TableHead>
+                  <TableHead className="w-[50px] text-gray-400">Пара</TableHead>
                   <TableHead className="w-[120px] text-gray-400">Время</TableHead>
                   <TableHead className="w-[100px] text-gray-400">Аудитория</TableHead>
                   <TableHead className="w-[150px] text-gray-400">Преподаватель</TableHead>
@@ -103,40 +129,23 @@ export function DarkThemeScheduleTableComponent({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredSchedule.length > 0 &&
-                    filteredSchedule.map((entry, index) => (
-                        <TableRow
-                            key={`${entry.date}-${entry.timestart}-${index}`}
-                            className="border-b border-gray-800 hover:bg-[#17181A]"
-                            style={{ height: '50px' }} // Фиксированная высота для заполненных строк
-                        >
-                          <TableCell className="font-medium">{index + 1}</TableCell>
-                          <TableCell>{`${formatTime(entry.timestart)} - ${formatTime(entry.timefinish)}`}</TableCell>
-                          <TableCell>{entry.aydit}</TableCell>
-                          <TableCell>{entry.teacher}</TableCell>
-                          <TableCell>{getClassType(entry.name)}</TableCell>
-                          <TableCell>{formatSubject(entry.name)}</TableCell>
-                        </TableRow>
-                    ))}
-
-                {/* Добавление пустых строк до 4 */}
-                {Array.from({ length: 4 - filteredSchedule.length }).map((_, index) => (
+                {filteredSchedule.map((entry, index) => (
                     <TableRow
-                        key={`empty-row-${index}`}
+                        key={entry ? `${entry.date}-${entry.timestart}` : `empty-${index}`}
                         className="border-b border-gray-800 hover:bg-[#17181A]"
-                        style={{ height: '55px' }} // Фиксированная высота для пустых строк
+                        style={{ height: '55px' }}
                     >
-                      <TableCell className="font-medium">-</TableCell>
-                      <TableCell>-</TableCell>
-                      <TableCell>-</TableCell>
-                      <TableCell>-</TableCell>
-                      <TableCell>-</TableCell>
-                      <TableCell>-</TableCell>
+                      <TableCell className="font-medium">{index + 1}</TableCell>
+                      <TableCell>
+                        {entry ? `${formatTime(entry.timestart)} - ${formatTime(entry.timefinish)}` : '-'}
+                      </TableCell>
+                      <TableCell>{entry?.aydit || '-'}</TableCell>
+                      <TableCell>{entry?.teacher || '-'}</TableCell>
+                      <TableCell>{entry ? getClassType(entry.name) : '-'}</TableCell>
+                      <TableCell>{entry ? formatSubject(entry.name) : '-'}</TableCell>
                     </TableRow>
                 ))}
               </TableBody>
-
-
             </Table>
           </div>
           <div className="flex justify-between items-center mt-4">
@@ -173,8 +182,7 @@ export function DarkThemeScheduleTableComponent({
   );
 }
 
-// Вспомогательные функции для форматирования даты и времени
-const formatTime = (time: string) => time.slice(0, 5); // Форматируем как HH:MM
+const formatTime = (time: string) => time.slice(0, 5);
 
 const getClassType = (subject: string) => {
   if (subject.includes("(Практ. (семин.) занятие)")) {
@@ -183,8 +191,12 @@ const getClassType = (subject: string) => {
   if (subject.includes("(Лекция)")) {
     return "Лекция";
   }
+  if (subject.includes("(лабораторная работа)")) {
+    return "Лабораторная работа";
+  }
   return "Неизвестно";
 };
+
 
 const formatSubject = (subject: string) => subject.replace(/\(.*\)/, "").trim();
 

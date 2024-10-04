@@ -13,12 +13,26 @@ export function GroupSelector({ onSubmit }: GroupSelectorProps) {
   const [groupName, setGroupName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const formatGroupName = (input: string): string => {
+    // Преобразуем строку к нижнему регистру и удаляем лишние пробелы
+    const trimmedInput = input.trim().toLowerCase();
+
+    // Приводим первую букву и оставшуюся часть
+    return trimmedInput
+        .replace(/^([а-яa-zё]+)([-\s]?)(\d+)$/i, (_, letters, separator, numbers) => {
+          const formattedLetters = letters.charAt(0).toUpperCase() + letters.slice(1).toLowerCase();
+          return `${formattedLetters}${separator}${numbers}`;
+        });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!groupName.trim()) return;
 
+    const formattedGroupName = formatGroupName(groupName);
+
     setIsSubmitting(true);
-    await onSubmit(groupName.trim());
+    await onSubmit(formattedGroupName);
     setIsSubmitting(false);
   };
 

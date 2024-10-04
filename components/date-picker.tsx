@@ -16,13 +16,20 @@ export function DatePicker({ onSelect }: DatePickerProps) {
   const [isOpen, setIsOpen] = useState(false)
 
   const handleSelect = (selectedDate: Date | undefined) => {
-    setDate(selectedDate)
     if (selectedDate) {
-      console.log("Выбранная дата:", format(selectedDate, "dd.MM.yyyy"))
-      onSelect(selectedDate)
-      setIsOpen(false)
+      // Корректировка на локальный часовой пояс без смещения времени
+      const adjustedDate = new Date(
+          selectedDate.getTime() - selectedDate.getTimezoneOffset() * 60000
+      );
+
+      console.log("Выбранная дата (локальная полночь без смещения):", adjustedDate.toISOString());
+      setDate(adjustedDate);
+      onSelect(adjustedDate);
+      setIsOpen(false);
     }
-  }
+  };
+
+
 
   return (
       <div className="flex flex-col items-center space-y-4">
