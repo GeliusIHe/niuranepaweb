@@ -7,6 +7,7 @@ import { format, startOfMonth, endOfMonth } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { ScheduleComponent } from "@/components/schedule-calendar";
 import { Loader2 } from "lucide-react";
+import {MobileScheduleRedirect} from "@/components/mobile-schedule-redirect";
 
 type ScheduleEntry = {
     date: string;
@@ -30,6 +31,34 @@ export default function Home() {
     const [viewMode, setViewMode] = useState<'table' | 'calendar'>('table');
     const [isCalendarLoading, setIsCalendarLoading] = useState(false);
 
+    const [isMobile, setIsMobile] = useState(false);
+
+    useEffect(() => {
+        const checkMobile = () => {
+            setIsMobile(window.innerWidth <= 768); // Пример breakpoint для мобильных устройств
+        };
+
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+
+        const savedGroup = localStorage.getItem("selectedGroup");
+        const savedViewMode = localStorage.getItem("viewMode");
+        if (savedGroup) {
+            setGroupName(savedGroup);
+            if (savedViewMode) {
+                setViewMode(savedViewMode as 'table' | 'calendar');
+            }
+            if (viewMode === 'calendar') {
+                fetchMonthlySchedule(savedGroup, selectedDate);
+            } else {
+                fetchWeeklySchedule(savedGroup, selectedDate);
+            }
+        }
+        setIsCheckingLocalStorage(false);
+
+        return () => window.removeEventListener('resize', checkMobile);
+    }, [viewMode]);
+
     useEffect(() => {
         const savedGroup = localStorage.getItem("selectedGroup");
         const savedViewMode = localStorage.getItem("viewMode");
@@ -46,6 +75,8 @@ export default function Home() {
         }
         setIsCheckingLocalStorage(false);
     }, [viewMode]);
+
+
 
     // Функция для загрузки расписания на неделю
     const fetchWeeklySchedule = useCallback(
@@ -189,6 +220,10 @@ export default function Home() {
                 </div>
             </div>
         );
+    }
+
+    if (isMobile) {
+        return <MobileScheduleRedirect />;
     }
 
     return (
