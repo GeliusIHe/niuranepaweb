@@ -9,26 +9,17 @@ import { format } from "date-fns";
 import { CalendarIcon } from "lucide-react";
 
 interface DatePickerProps {
-  onSelect: (date: Date | undefined) => void;
+  onSelect: (date: Date) => void;
 }
 
 export function DatePicker({ onSelect }: DatePickerProps) {
-  const [date, setDate] = useState<Date>();
+  const [date, setDate] = useState<Date | undefined>(new Date());
   const [isOpen, setIsOpen] = useState(false);
 
-  // Обработчик выбора даты
   const handleSelect = (selectedDate: Date | undefined) => {
     if (selectedDate) {
-      // Устанавливаем время в полночь по локальному времени
-      const localDate = new Date(
-          selectedDate.getFullYear(),
-          selectedDate.getMonth(),
-          selectedDate.getDate(),
-          0, 0, 0
-      );
-
-      setDate(localDate);
-      onSelect(localDate);
+      setDate(selectedDate);
+      onSelect(selectedDate);
       setIsOpen(false);
     }
   };

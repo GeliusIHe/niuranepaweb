@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { format, getDaysInMonth, startOfMonth, getDay, addMonths, subMonths, eachWeekOfInterval, endOfMonth } from 'date-fns';
+import { format, getDaysInMonth, startOfMonth, addMonths, subMonths, eachWeekOfInterval, endOfMonth } from 'date-fns';
 import { ru } from 'date-fns/locale';
 
 type ScheduleEntry = {
@@ -33,20 +33,32 @@ export function ScheduleComponent({ scheduleData, onLoadMore, groupName, current
   }, [groupName, currentMonth]);
 
   useEffect(() => {
+    // Загружаем данные из localStorage при монтировании компонента
     const savedSelectedDays = localStorage.getItem(localStorageKey);
-    if (savedSelectedDays) {
-      setSelectedDays(JSON.parse(savedSelectedDays));
-    } else {
-      setSelectedDays([]);
+
+    if (savedSelectedDays !== null) {
+      try {
+        const parsedDays = JSON.parse(savedSelectedDays);
+        if (Array.isArray(parsedDays)) {
+          setSelectedDays((prevState) => {
+            if (prevState.length === 0) {
+              return parsedDays;
+            }
+            return prevState;
+          });
+        }
+      } catch (error) {
+        console.error('Ошибка парсинга данных из localStorage:', error);
+      }
     }
   }, [localStorageKey]);
 
   useEffect(() => {
-    if (selectedDays.length > 0) {
+    if (selectedDays.length > 0 || localStorage.getItem(localStorageKey)) {
       localStorage.setItem(localStorageKey, JSON.stringify(selectedDays));
     }
   }, [selectedDays, localStorageKey]);
-  getDay(startOfMonth(currentMonth));
+
   const scheduleByDate = useMemo(() => {
     const grouped: { [key: string]: ScheduleEntry[] } = {};
     scheduleData.forEach((entry: ScheduleEntry) => {
@@ -59,19 +71,12 @@ export function ScheduleComponent({ scheduleData, onLoadMore, groupName, current
   }, [scheduleData]);
 
   const toggleDay = (day: number) => {
-    setSelectedDays((prev) =>
-        prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
-    );
-  };
-
-  const handlePrevMonth = () => {
-    const newDate = subMonths(currentMonth, 1);
-    onLoadMore(newDate);
-  };
-
-  const handleNextMonth = () => {
-    const newDate = addMonths(currentMonth, 1);
-    onLoadMore(newDate);
+    setSelectedDays((prev) => {
+      const updatedDays = prev.includes(day)
+          ? prev.filter((d) => d !== day)
+          : [...prev, day];
+      return updatedDays;
+    });
   };
 
   const formatTime = (time: string) => time.slice(0, 5);
@@ -144,13 +149,13 @@ export function ScheduleComponent({ scheduleData, onLoadMore, groupName, current
                                       selectedDays.includes(dayNumber) ? 'text-black' : 'text-gray-200'
                                   }`}
                               >
-                        <span className="flex items-center">
-                          {dayNumber}
-                          {dayNumber === currentDay &&
-                              currentMonth.getMonth() === new Date().getMonth() && (
-                                  <span className="ml-1 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                              )}
-                        </span>
+                                <span className="flex items-center">
+                                  {dayNumber}
+                                  {dayNumber === currentDay &&
+                                      currentMonth.getMonth() === new Date().getMonth() && (
+                                          <span className="ml-1 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                                      )}
+                                </span>
                               </div>
                               {daySchedule.length === 0 ? (
                                   <div
@@ -165,8 +170,8 @@ export function ScheduleComponent({ scheduleData, onLoadMore, groupName, current
                                         <div className="flex items-center justify-between">
                                           <div className="h-px bg-gray-600 flex-grow"></div>
                                           <span className={`px-2 text-xs ${selectedDays.includes(dayNumber) ? 'text-black' : 'text-gray-400'}`}>
-                                {formatTime(entry.timestart)} - {formatTime(entry.timefinish)} ({entry.aydit})
-                              </span>
+                                            {formatTime(entry.timestart)} - {formatTime(entry.timefinish)} ({entry.aydit})
+                                          </span>
                                           <div className="h-px bg-gray-600 flex-grow"></div>
                                         </div>
                                         <div className={`text-sm mt-1 leading-tight ${selectedDays.includes(dayNumber) ? 'text-black' : 'text-gray-300'}`}>
@@ -190,11 +195,21 @@ export function ScheduleComponent({ scheduleData, onLoadMore, groupName, current
       <div className="min-h-screen p-4 rounded-lg" style={{ backgroundColor: '#09090B' }}>
         <div className="max-w-7xl mx-auto">
           <div className="flex justify-between items-center mb-4 text-gray-200">
-            <ChevronLeft className="w-6 h-6 cursor-pointer" onClick={handlePrevMonth} />
+            <div
+                className="cursor-pointer hover:bg-gray-800 p-2 rounded-full transition-colors"
+                onClick={() => onLoadMore(subMonths(currentMonth, 1))}
+            >
+              <ChevronLeft className="w-6 h-6" />
+            </div>
             <h2 className="text-2xl font-bold">
               {format(currentMonth, 'LLLL yyyy', { locale: ru })}
             </h2>
-            <ChevronRight className="w-6 h-6 cursor-pointer" onClick={handleNextMonth} />
+            <div
+                className="cursor-pointer hover:bg-gray-800 p-2 rounded-full transition-colors"
+                onClick={() => onLoadMore(addMonths(currentMonth, 1))}
+            >
+              <ChevronRight className="w-6 h-6" />
+            </div>
           </div>
           {renderCalendarContent()}
         </div>
