@@ -3,7 +3,7 @@ import { useState, useCallback, useEffect } from "react";
 import { GroupSelector } from "@/components/group-selector";
 import { DarkThemeScheduleTableComponent } from "@/components/schedule-table";
 import { DatePicker } from "@/components/date-picker";
-import { format, startOfWeek, endOfWeek, addWeeks, subWeeks, startOfMonth, endOfMonth, addMonths } from "date-fns";
+import { format, startOfWeek, startOfMonth, endOfMonth, addWeeks, subWeeks } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { ScheduleComponent } from "@/components/schedule-calendar";
 import { Loader2 } from "lucide-react";
@@ -19,19 +19,74 @@ type ScheduleEntry = {
     namegroup: string;
 };
 
+type ScheduleState = {
+    data: ScheduleEntry[];
+    isLoading: boolean;
+    error: string | null;
+    loadedRanges: { start: Date; end: Date }[];
+};
+
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 export default function Home() {
     const [groupName, setGroupName] = useState<string | null>(null);
-    const [isLoading, setIsLoading] = useState(false);
-    const [scheduleData, setScheduleData] = useState<ScheduleEntry[]>([]);
-    const [error, setError] = useState<string | null>(null);
     const [isCheckingLocalStorage, setIsCheckingLocalStorage] = useState(true);
     const [selectedDate, setSelectedDate] = useState<Date>(new Date());
     const [viewMode, setViewMode] = useState<'table' | 'calendar'>('table');
-    const [isCalendarLoading, setIsCalendarLoading] = useState(false);
     const [isMobile, setIsMobile] = useState(false);
-    const [loadedRanges, setLoadedRanges] = useState<{ start: Date; end: Date }[]>([]);
+
+    const [scheduleState, setScheduleState] = useState<ScheduleState>({
+        data: [],
+        isLoading: false,
+        error: null,
+        loadedRanges: []
+    });
+
+    const isRangeLoaded = useCallback((startDate: Date, endDate: Date) => {
+        return scheduleState.loadedRanges.some(range =>
+            range.start <= startDate && range.end >= endDate
+        );
+    }, [scheduleState.loadedRanges]);
+
+    const loadSchedule = useCallback(async (
+        selectedGroup: string,
+        startDate: Date,
+        endDate: Date
+    ) => {
+        if (scheduleState.isLoading || isRangeLoaded(startDate, endDate)) {
+            return;
+        }
+
+        setScheduleState(prev => ({ ...prev, isLoading: true, error: null }));
+
+        try {
+            const response = await fetch(
+                `${apiBaseUrl}/get_schedule/?user=${encodeURIComponent(selectedGroup)}&dstart=${formatDate(startDate)}&dfinish=${formatDate(endDate)}`
+            );
+
+            if (!response.ok) {
+                throw new Error(`Error: ${response.status} ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            if (data.schedule && Array.isArray(data.schedule)) {
+                setScheduleState(prev => ({
+                    ...prev,
+                    data: removeDuplicateEntries([...prev.data, ...data.schedule]),
+                    loadedRanges: [...prev.loadedRanges, { start: startDate, end: endDate }]
+                }));
+            } else {
+                throw new Error("Invalid data format received from server.");
+            }
+        } catch (err) {
+            setScheduleState(prev => ({
+                ...prev,
+                error: `Не удалось загрузить расписание: ${err instanceof Error ? err.message : String(err)}`
+            }));
+        } finally {
+            setScheduleState(prev => ({ ...prev, isLoading: false }));
+        }
+    }, [isRangeLoaded, scheduleState.isLoading]);
 
     useEffect(() => {
         const checkMobile = () => {
@@ -54,68 +109,32 @@ export default function Home() {
         return () => window.removeEventListener('resize', checkMobile);
     }, []);
 
+    const getDateRange = useCallback((date: Date, mode: 'table' | 'calendar') => {
+        if (mode === 'calendar') {
+            return {
+                start: startOfMonth(date),
+                end: endOfMonth(date)
+            };
+        }
+        const start = subWeeks(startOfWeek(date, { weekStartsOn: 1 }), 1);
+        return {
+            start,
+            end: addWeeks(start, 2)
+        };
+    }, []);
+
+    const loadInitialSchedule = useCallback((selectedGroup: string, date: Date) => {
+        const { start, end } = getDateRange(date, viewMode);
+        loadSchedule(selectedGroup, start, end);
+    }, [getDateRange, loadSchedule, viewMode]);
+
     useEffect(() => {
         if (groupName) {
             loadInitialSchedule(groupName, selectedDate);
         }
-    }, [groupName, viewMode, selectedDate]);
+    }, [groupName, viewMode, selectedDate, loadInitialSchedule]);
 
-    const loadInitialSchedule = (selectedGroup: string, date: Date) => {
-        if (viewMode === 'calendar') {
-            const startDate = startOfMonth(date);
-            const endDate = endOfMonth(date);
-            loadSchedule(selectedGroup, startDate, endDate);
-        } else {
-            const startDate = subWeeks(startOfWeek(date, { weekStartsOn: 1 }), 1);
-            const endDate = addWeeks(startDate, 2);
-            loadSchedule(selectedGroup, startDate, endDate);
-        }
-    };
-
-    const loadSchedule = useCallback(
-        async (selectedGroup: string, startDate: Date, endDate: Date) => {
-            const formatDate = (date: Date) => format(date, "dd.MM.yyyy");
-
-            if (isLoading) return;
-
-            if (loadedRanges.some(range => range.start <= startDate && range.end >= endDate)) {
-                return;
-            }
-
-            setIsLoading(true);
-            setError(null);
-
-            try {
-                const response = await fetch(
-                    `${apiBaseUrl}/get_schedule/?user=${encodeURIComponent(
-                        selectedGroup
-                    )}&dstart=${formatDate(startDate)}&dfinish=${formatDate(endDate)}`
-                );
-
-                if (!response.ok) {
-                    throw new Error(`Error: ${response.status} ${response.statusText}`);
-                }
-
-                const data = await response.json();
-                if (data.schedule && Array.isArray(data.schedule)) {
-                    const uniqueSchedule = removeDuplicateEntries([...scheduleData, ...data.schedule]);
-                    setScheduleData(uniqueSchedule);
-                    setLoadedRanges(prevRanges => [...prevRanges, { start: startDate, end: endDate }]);
-                } else {
-                    throw new Error("Invalid data format received from server.");
-                }
-            } catch (err) {
-                setError(
-                    `Не удалось загрузить расписание: ${
-                        err instanceof Error ? err.message : String(err)
-                    }`
-                );
-            } finally {
-                setIsLoading(false);
-            }
-        },
-        [isLoading, loadedRanges, scheduleData]
-    );
+    const formatDate = (date: Date) => format(date, "dd.MM.yyyy");
 
     const removeDuplicateEntries = (entries: ScheduleEntry[]): ScheduleEntry[] => {
         const seen = new Set();
@@ -130,8 +149,11 @@ export default function Home() {
     };
 
     const handleGroupSubmit = (selectedGroup: string) => {
-        setScheduleData([]);
-        setLoadedRanges([]);
+        setScheduleState(prev => ({
+            ...prev,
+            data: [],
+            loadedRanges: []
+        }));
         setGroupName(selectedGroup);
         localStorage.setItem("selectedGroup", selectedGroup);
     };
@@ -144,17 +166,10 @@ export default function Home() {
 
     const handleLoadMore = (date: Date) => {
         setSelectedDate(date);
-        if (viewMode === 'calendar') {
-            const startDate = startOfMonth(date);
-            const endDate = endOfMonth(date);
-            if (groupName && !loadedRanges.some(range => range.start <= startDate && range.end >= endDate)) {
-                loadSchedule(groupName, startDate, endDate);
-            }
-        } else {
-            const startDate = startOfWeek(date, { weekStartsOn: 1 });
-            const endDate = addWeeks(startDate, 1);
-            if (groupName) {
-                loadSchedule(groupName, startDate, endDate);
+        if (groupName) {
+            const { start, end } = getDateRange(date, viewMode);
+            if (!isRangeLoaded(start, end)) {
+                loadSchedule(groupName, start, end);
             }
         }
     };
@@ -191,30 +206,23 @@ export default function Home() {
                         {viewMode === 'table' && (
                             <DatePicker onSelect={handleDateSelect} />
                         )}
-                        <Button onClick={toggleViewMode} disabled={isCalendarLoading}>
-                            {isCalendarLoading ? (
-                                <Loader2 className="animate-spin h-4 w-4 mr-2" />
-                            ) : null}
+                        <Button onClick={toggleViewMode}>
                             {viewMode === 'table' ? 'Показать календарь' : 'Показать таблицу'}
                         </Button>
                     </div>
                     {viewMode === 'table' ? (
                         <DarkThemeScheduleTableComponent
-                            scheduleData={scheduleData}
+                            scheduleData={scheduleState.data}
                             onLoadMore={handleLoadMore}
-                            isLoading={isLoading}
+                            isLoading={scheduleState.isLoading}
                             groupName={groupName}
                             onChangeGroup={() => setGroupName(null)}
                             currentDate={selectedDate}
                             setCurrentDate={setSelectedDate}
                         />
-                    ) : isCalendarLoading ? (
-                        <div className="flex items-center justify-center h-64">
-                            <Loader2 className="animate-spin h-8 w-8 text-gray-300" />
-                        </div>
                     ) : (
                         <ScheduleComponent
-                            scheduleData={scheduleData}
+                            scheduleData={scheduleState.data}
                             onLoadMore={handleLoadMore}
                             groupName={groupName}
                             viewMode={viewMode}
